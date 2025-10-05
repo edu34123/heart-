@@ -1,13 +1,14 @@
 import discord
 from discord.ext import commands
 import asyncio
-import json
 import os
-from datetime import datetime
+from aiohttp import web
+import threading
 
-# Configurazione con variabili d'ambiente
+# Configurazione
 token = os.getenv('DISCORD_TOKEN')
-prefix = os.getenv('PREFIX', '!')
+prefix = os.getenv('PREFIX', '/')
+port = int(os.getenv('PORT', 10000))
 
 if not token:
     print("❌ ERRORE: DISCORD_TOKEN non trovato!")
@@ -16,10 +17,25 @@ if not token:
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=prefix, intents=intents, help_command=None)
 
+# Web server per Render
+async def health_check(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Web server avviato sulla porta {port}")
+
 @bot.event
 async def on_ready():
-    print(f'{bot.user} è online!')
-    print(f'Connesso a {len(bot.guilds)} server')
+    print(f'✅ {bot.user} è online!')
+    print(f'📊 Connesso a {len(bot.guilds)} server')
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=f"{prefix}help"))
 
 @bot.event
@@ -43,6 +59,10 @@ async def load_cogs():
                 print(f'❌ Errore nel caricare {filename}: {e}')
 
 async def main():
+    # Avvia il web server in background
+    asyncio.create_task(start_web_server())
+    
+    # Carica i cog e avvia il bot
     async with bot:
         await load_cogs()
         await bot.start(token)
